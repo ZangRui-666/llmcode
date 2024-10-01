@@ -1,4 +1,4 @@
-git from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 model_name = "Qwen/Qwen2.5-0.5B-Instruct"
 
