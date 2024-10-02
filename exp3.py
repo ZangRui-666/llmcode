@@ -10,12 +10,30 @@ from datasets import load_dataset
 test = load_dataset("wikitext", "wikitext-2-raw-v1", split="test")
 encodings = tokenizer("\n\n".join(test["text"]), return_tensors="pt")
 
+# 打印test的基本信息和前几行内容
+print("Test dataset info:")
+print(test.info)
+print("\nFirst few lines of test dataset:")
+for i in range(5):
+    print(test["text"][i])  
+# 打印encodings的基本信息和前几行内容
+print("\nEncodings info:")
+print(encodings)
+print("\nFirst few lines of encodings:")
+for i in range(5):
+    print(encodings["input_ids"][i])
+
+# 打印encodings的基本信息和前几行内容
+print("Encodings info:")
+
+
 import torch
 from tqdm import tqdm
 
 max_length = model.config.n_positions
 stride = 512
 seq_len = encodings.input_ids.size(1)
+print(seq_len)
 
 nlls = []
 prev_end_loc = 0
@@ -42,8 +60,13 @@ for begin_loc in tqdm(range(0, seq_len, stride)):
 
 ppl = torch.exp(torch.stack(nlls).mean())
 
-# 打印ppl的基本信息和前几行内容
-print(f"Perplexity (PPL): {ppl.item()}")
-print(f"Shape of PPL: {ppl.shape}")
-print(f"First 5 values of PPL: {ppl[:5]}")
-print(f"Last 5 values of PPL: {ppl[-5:]}")
+
+list=nlls
+print("list的基本信息：")
+print("元素个数:", len(list))
+print("元素类型:", type(list[0]))
+
+# 打印list的前几个元素
+print("\nlist的前几个元素：")
+for i in range(3):
+    print(list[i])
