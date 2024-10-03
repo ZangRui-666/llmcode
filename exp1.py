@@ -23,6 +23,9 @@ with torch.no_grad():
     outputs = model(input_ids, labels=labels)
     logits = outputs.logits  # shape: (1, seq_len, vocab_size)
     loss = outputs.loss  # scalar loss averaged over tokens
+    # outputs.loss is equivalent to torch.nn.CrossEntropyLoss(reduction='mean')(logits.view(-1, logits.size(-1)), labels.view(-1))
+
+
 
 # To compute per-token loss, we use CrossEntropyLoss with 'none' reduction
 loss_fn = torch.nn.CrossEntropyLoss(reduction='none')
