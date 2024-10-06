@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Load the reference model and tokenizer</title>
+            <style>
+/* From extension vscode.github */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vscode-dark img[src$=\#gh-light-mode-only],
+.vscode-light img[src$=\#gh-dark-mode-only],
+.vscode-high-contrast:not(.vscode-high-contrast-light) img[src$=\#gh-light-mode-only],
+.vscode-high-contrast-light img[src$=\#gh-dark-mode-only] {
+	display: none;
+}
+
+</style>
+            
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/markdown.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/Microsoft/vscode/extensions/markdown-language-features/media/highlight.css">
+<style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', system-ui, 'Ubuntu', 'Droid Sans', sans-serif;
+                font-size: 14px;
+                line-height: 1.6;
+            }
+        </style>
+        <style>
+.task-list-item {
+    list-style-type: none;
+}
+
+.task-list-item-checkbox {
+    margin-left: -20px;
+    vertical-align: middle;
+    pointer-events: none;
+}
+</style>
+<style>
+:root {
+  --color-note: #0969da;
+  --color-tip: #1a7f37;
+  --color-warning: #9a6700;
+  --color-severe: #bc4c00;
+  --color-caution: #d1242f;
+  --color-important: #8250df;
+}
+
+</style>
+<style>
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-note: #2f81f7;
+    --color-tip: #3fb950;
+    --color-warning: #d29922;
+    --color-severe: #db6d28;
+    --color-caution: #f85149;
+    --color-important: #a371f7;
+  }
+}
+
+</style>
+<style>
+.markdown-alert {
+  padding: 0.5rem 1rem;
+  margin-bottom: 16px;
+  color: inherit;
+  border-left: .25em solid #888;
+}
+
+.markdown-alert>:first-child {
+  margin-top: 0
+}
+
+.markdown-alert>:last-child {
+  margin-bottom: 0
+}
+
+.markdown-alert .markdown-alert-title {
+  display: flex;
+  font-weight: 500;
+  align-items: center;
+  line-height: 1
+}
+
+.markdown-alert .markdown-alert-title .octicon {
+  margin-right: 0.5rem;
+  display: inline-block;
+  overflow: visible !important;
+  vertical-align: text-bottom;
+  fill: currentColor;
+}
+
+.markdown-alert.markdown-alert-note {
+  border-left-color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-note .markdown-alert-title {
+  color: var(--color-note);
+}
+
+.markdown-alert.markdown-alert-important {
+  border-left-color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-important .markdown-alert-title {
+  color: var(--color-important);
+}
+
+.markdown-alert.markdown-alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-warning .markdown-alert-title {
+  color: var(--color-warning);
+}
+
+.markdown-alert.markdown-alert-tip {
+  border-left-color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-tip .markdown-alert-title {
+  color: var(--color-tip);
+}
+
+.markdown-alert.markdown-alert-caution {
+  border-left-color: var(--color-caution);
+}
+
+.markdown-alert.markdown-alert-caution .markdown-alert-title {
+  color: var(--color-caution);
+}
+
+</style>
+        
+        </head>
+        <body class="vscode-body vscode-light">
+            <p>思路就是用一个比较好的模型来指导训练我们要训练的模型，比如像下边这个用Qwen1.5B(Reference Model)来指导训练Qwen0.5B(Training Model)。思路就是训练Training Model过程中计算出token的loss之后，跟Reference的loss进行比较，差值记为diff，然后drop掉百分之五十的token也就是把他们loss改成0反向传播就不管他们了，只继续训练差值大的百分之五十就行，这样提高一些训练效率。</p>
+<p><a href="https://zhuanlan.zhihu.com/p/671203641#:~:text=%E8%AE%AD%E7%BB%83%E7%9A%84%E6%97%B6%E5%80%99%E5%90%8C%E6%97%B6%E6%9B%B4%E6%96%B0%E8%BF%99#:~:text=%E8%AE%AD%E7%BB%83%E7%9A%84%E6%97%B6%E5%80%99%E5%90%8C%E6%97%B6%E6%9B%B4%E6%96%B0%E8%BF%99">图解LLM训练和推理的秘密-1 - 知乎 (zhihu.com)</a></p>
+<pre><code class="language-python"><span class="hljs-keyword">import</span> torch
+<span class="hljs-keyword">from</span> torch.utils.data <span class="hljs-keyword">import</span> Dataset, DataLoader
+<span class="hljs-keyword">from</span> torch.nn.utils.rnn <span class="hljs-keyword">import</span> pad_sequence
+<span class="hljs-keyword">from</span> transformers <span class="hljs-keyword">import</span> AutoModelForCausalLM, AutoTokenizer
+<span class="hljs-keyword">from</span> datasets <span class="hljs-keyword">import</span> load_dataset  <span class="hljs-comment"># New import for datasets library</span>
+
+<span class="hljs-comment"># Load the reference model and tokenizer</span>
+reference_tokenizer = AutoTokenizer.from_pretrained(<span class="hljs-string">&quot;Qwen/Qwen2.5-1.5B&quot;</span>)
+reference_model = AutoModelForCausalLM.from_pretrained(<span class="hljs-string">&quot;Qwen/Qwen2.5-1.5B&quot;</span>)
+
+<span class="hljs-comment"># Load the tinyLlama model and tokenizer</span>
+tinylama_tokenizer = AutoTokenizer.from_pretrained(<span class="hljs-string">&quot;Qwen/Qwen2.5-0.5B&quot;</span>)
+tinylama_model = AutoModelForCausalLM.from_pretrained(<span class="hljs-string">&quot;Qwen/Qwen2.5-0.5B&quot;</span>)
+
+<span class="hljs-comment"># Device configuration</span>
+device = torch.device(<span class="hljs-string">&#x27;cuda&#x27;</span> <span class="hljs-keyword">if</span> torch.cuda.is_available() <span class="hljs-keyword">else</span> <span class="hljs-string">&#x27;cpu&#x27;</span>)
+reference_model.to(device)
+tinylama_model.to(device)
+
+<span class="hljs-comment"># New: Load the Wikimedia dataset</span>
+dataset_name = <span class="hljs-string">&#x27;wikitext&#x27;</span>  <span class="hljs-comment"># You can also use &#x27;wiki40b&#x27; or other datasets</span>
+dataset_version = <span class="hljs-string">&#x27;wikitext-103-raw-v1&#x27;</span>  <span class="hljs-comment"># For &#x27;wikitext&#x27; dataset</span>
+split = <span class="hljs-string">&#x27;train&#x27;</span>  <span class="hljs-comment"># You can choose &#x27;train&#x27;, &#x27;validation&#x27;, or &#x27;test&#x27;</span>
+
+<span class="hljs-comment"># Load the dataset using Hugging Face Datasets</span>
+raw_datasets = load_dataset(dataset_name, dataset_version, split=split)
+<span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Loaded <span class="hljs-subst">{<span class="hljs-built_in">len</span>(raw_datasets)}</span> examples from the <span class="hljs-subst">{split}</span> split of <span class="hljs-subst">{dataset_name}</span>&quot;</span>)
+
+<span class="hljs-keyword">class</span> <span class="hljs-title class_">ReferenceDataset</span>(<span class="hljs-title class_ inherited__">Dataset</span>):
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__init__</span>(<span class="hljs-params">self, datasets, tokenizer, block_size, reference_model, device</span>):
+        self.examples = []
+        self.reference_losses = []
+        self.tokenizer = tokenizer
+        self.reference_model = reference_model
+        self.device = device
+        self.block_size = block_size
+        self.prepare_dataset(datasets)
+  
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">prepare_dataset</span>(<span class="hljs-params">self, datasets</span>):
+        self.reference_model.<span class="hljs-built_in">eval</span>()
+        <span class="hljs-keyword">with</span> torch.no_grad():
+            <span class="hljs-keyword">for</span> example <span class="hljs-keyword">in</span> datasets:
+                text = example[<span class="hljs-string">&#x27;text&#x27;</span>]
+                <span class="hljs-comment"># Tokenize and split into blocks</span>
+                tokens = self.tokenizer.encode(text, add_special_tokens=<span class="hljs-literal">False</span>)
+                <span class="hljs-keyword">for</span> i <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(<span class="hljs-number">0</span>, <span class="hljs-built_in">len</span>(tokens), self.block_size):
+                    block_tokens = tokens[i:i + self.block_size]
+                    input_ids = torch.tensor(block_tokens, dtype=torch.long).unsqueeze(<span class="hljs-number">0</span>).to(self.device)
+                    labels = input_ids.clone()
+                
+                    <span class="hljs-comment"># Compute reference loss</span>
+                    outputs = self.reference_model(input_ids)
+                    logits = outputs.logits
+                    shift_logits = logits[..., :-<span class="hljs-number">1</span>, :].contiguous()
+                    shift_labels = labels[..., <span class="hljs-number">1</span>:].contiguous()
+                    loss_fct = torch.nn.CrossEntropyLoss(reduction=<span class="hljs-string">&#x27;none&#x27;</span>)
+                    loss = loss_fct(shift_logits.view(-<span class="hljs-number">1</span>, shift_logits.size(-<span class="hljs-number">1</span>)), shift_labels.view(-<span class="hljs-number">1</span>))
+                    loss = loss.view(shift_labels.size())  <span class="hljs-comment"># Shape: [1, seq_len - 1]</span>
+                
+                    <span class="hljs-comment"># Store input_ids and reference loss</span>
+                    self.examples.append(input_ids.squeeze(<span class="hljs-number">0</span>).cpu())
+                    self.reference_losses.append(loss.squeeze(<span class="hljs-number">0</span>).cpu())
+
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__len__</span>(<span class="hljs-params">self</span>):
+        <span class="hljs-keyword">return</span> <span class="hljs-built_in">len</span>(self.examples)
+
+    <span class="hljs-keyword">def</span> <span class="hljs-title function_">__getitem__</span>(<span class="hljs-params">self, idx</span>):
+        <span class="hljs-keyword">return</span> self.examples[idx], self.reference_losses[idx]
+
+<span class="hljs-keyword">def</span> <span class="hljs-title function_">collate_fn</span>(<span class="hljs-params">batch</span>):
+    input_ids_list, ref_losses_list = <span class="hljs-built_in">zip</span>(*batch)
+    input_ids_padded = pad_sequence(input_ids_list, batch_first=<span class="hljs-literal">True</span>, padding_value=reference_tokenizer.pad_token_id)
+    ref_losses_padded = pad_sequence(ref_losses_list, batch_first=<span class="hljs-literal">True</span>, padding_value=<span class="hljs-number">0.0</span>)
+    <span class="hljs-keyword">return</span> input_ids_padded, ref_losses_padded
+
+<span class="hljs-comment"># Hyperparameters</span>
+block_size = <span class="hljs-number">128</span>  <span class="hljs-comment"># Maximum sequence length for each example</span>
+batch_size = <span class="hljs-number">4</span>
+num_epochs = <span class="hljs-number">3</span>
+learning_rate = <span class="hljs-number">1e-5</span>
+
+<span class="hljs-comment"># Prepare the dataset and dataloader</span>
+<span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;Preparing the dataset...&quot;</span>)
+dataset = ReferenceDataset(raw_datasets, reference_tokenizer, block_size, reference_model, device)
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=<span class="hljs-literal">True</span>, collate_fn=collate_fn)
+<span class="hljs-built_in">print</span>(<span class="hljs-string">&quot;Dataset preparation complete.&quot;</span>)
+
+<span class="hljs-comment"># Optimizer</span>
+optimizer = torch.optim.AdamW(tinylama_model.parameters(), lr=learning_rate)
+
+<span class="hljs-comment"># Training loop</span>
+tinylama_model.train()
+<span class="hljs-keyword">for</span> epoch <span class="hljs-keyword">in</span> <span class="hljs-built_in">range</span>(num_epochs):
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Starting epoch <span class="hljs-subst">{epoch+<span class="hljs-number">1</span>}</span>/<span class="hljs-subst">{num_epochs}</span>&quot;</span>)
+    <span class="hljs-keyword">for</span> batch_idx, (input_ids, ref_losses) <span class="hljs-keyword">in</span> <span class="hljs-built_in">enumerate</span>(dataloader):
+        input_ids = input_ids.to(device)
+        ref_losses = ref_losses.to(device)
+    
+        <span class="hljs-comment"># Prepare inputs and labels for tinyLlama</span>
+        inputs = input_ids[:, :-<span class="hljs-number">1</span>]  <span class="hljs-comment"># Exclude last token</span>
+        labels = input_ids[:, <span class="hljs-number">1</span>:]   <span class="hljs-comment"># Exclude first token</span>
+    
+        <span class="hljs-comment"># Forward pass through tinyLlama</span>
+        outputs = tinylama_model(inputs, labels=labels)
+        logits = outputs.logits
+        shift_logits = logits.contiguous()
+        shift_labels = labels.contiguous()
+    
+        <span class="hljs-comment"># Compute training loss per token</span>
+        loss_fct = torch.nn.CrossEntropyLoss(reduction=<span class="hljs-string">&#x27;none&#x27;</span>)
+        training_loss = loss_fct(shift_logits.view(-<span class="hljs-number">1</span>, shift_logits.size(-<span class="hljs-number">1</span>)), shift_labels.view(-<span class="hljs-number">1</span>))
+        training_loss = training_loss.view(shift_labels.size())  <span class="hljs-comment"># Shape: [batch_size, seq_len - 1]</span>
+    
+        <span class="hljs-comment"># Compute excess loss: training loss minus reference loss</span>
+        excess_loss = training_loss - ref_losses
+    
+        <span class="hljs-comment"># Flatten excess loss to select top 30%</span>
+        flat_excess_loss = excess_loss.view(-<span class="hljs-number">1</span>)
+        num_tokens = flat_excess_loss.size(<span class="hljs-number">0</span>)
+        top_k = <span class="hljs-built_in">int</span>(num_tokens * <span class="hljs-number">0.3</span>)
+    
+        <span class="hljs-keyword">if</span> top_k == <span class="hljs-number">0</span>:
+            <span class="hljs-comment"># If the number of tokens is too small, default to keeping all tokens</span>
+            mask = torch.ones_like(flat_excess_loss)
+        <span class="hljs-keyword">else</span>:
+            <span class="hljs-comment"># Select indices of top 30% excess losses</span>
+            top_values, top_indices = torch.topk(flat_excess_loss, k=top_k)
+            mask = torch.zeros_like(flat_excess_loss)
+            mask[top_indices] = <span class="hljs-number">1.0</span>
+    
+        mask = mask.view(excess_loss.size())  <span class="hljs-comment"># Shape: [batch_size, seq_len - 1]</span>
+    
+        <span class="hljs-comment"># Zero out losses not in top 30%</span>
+        final_loss = (training_loss * mask).<span class="hljs-built_in">sum</span>() / mask.<span class="hljs-built_in">sum</span>()
+    
+        <span class="hljs-comment"># Backpropagation</span>
+        optimizer.zero_grad()
+        final_loss.backward()
+        optimizer.step()
+    
+        <span class="hljs-keyword">if</span> (batch_idx + <span class="hljs-number">1</span>) % <span class="hljs-number">100</span> == <span class="hljs-number">0</span>:
+            <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Epoch [<span class="hljs-subst">{epoch+<span class="hljs-number">1</span>}</span>/<span class="hljs-subst">{num_epochs}</span>], Batch [<span class="hljs-subst">{batch_idx+<span class="hljs-number">1</span>}</span>/<span class="hljs-subst">{<span class="hljs-built_in">len</span>(dataloader)}</span>], Loss: <span class="hljs-subst">{final_loss.item():<span class="hljs-number">.4</span>f}</span>&quot;</span>)
+
+    <span class="hljs-built_in">print</span>(<span class="hljs-string">f&quot;Epoch <span class="hljs-subst">{epoch+<span class="hljs-number">1</span>}</span> complete.&quot;</span>)
+
+<span class="hljs-comment"># Save the trained tinyLlama model</span>
+tinylama_model.save_pretrained(<span class="hljs-string">&#x27;path/to/save/tinylama_model&#x27;</span>)
+tinylama_tokenizer.save_pretrained(<span class="hljs-string">&#x27;path/to/save/tinylama_tokenizer&#x27;</span>)
+</code></pre>
+
+            
+            
+        </body>
+        </html>
