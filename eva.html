@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Evaluation Metrics Comparison</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <h1>Code Evaluation Metrics Comparison</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Metric</th>
+                <th>Description</th>
+                <th>Strengths</th>
+                <th>Weaknesses</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>BLEU</td>
+                <td>Measures similarity using n-grams.</td>
+                <td>Widely used, easy to compute.</td>
+                <td>May not capture semantic correctness.</td>
+            </tr>
+            <tr>
+                <td>ROUGE</td>
+                <td>Focuses on recall with n-gram overlap.</td>
+                <td>Useful for recall-focused tasks.</td>
+                <td>Can overestimate quality with similar sequences.</td>
+            </tr>
+            <tr>
+                <td>CodeBLEU</td>
+                <td>Considers code structure, syntax, and semantics.</td>
+                <td>More suitable for code evaluation.</td>
+                <td>More complex to implement.</td>
+            </tr>
+            <tr>
+                <td>Exact Match (EM)</td>
+                <td>Percentage of cases with exact matches.</td>
+                <td>Simple and interpretable.</td>
+                <td>Too strict for minor variations.</td>
+            </tr>
+            <tr>
+                <td>Edit Distance</td>
+                <td>Number of edits to match reference code.</td>
+                <td>Granular measure of difference.</td>
+                <td>Computationally expensive.</td>
+            </tr>
+            <tr>
+                <td>Semantic Similarity</td>
+                <td>Measures functional equivalence.</td>
+                <td>Focuses on functionality.</td>
+                <td>Difficult to implement.</td>
+            </tr>
+            <tr>
+                <td>Human Evaluation</td>
+                <td>Expert review of generated code.</td>
+                <td>Assesses readability and maintainability.</td>
+                <td>Time-consuming and subjective.</td>
+            </tr>
+        </tbody>
+    </table>
+</body>
+</html>
